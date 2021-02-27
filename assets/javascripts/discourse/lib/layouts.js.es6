@@ -4,20 +4,26 @@ import DiscourseRoute from "discourse/routes/discourse";
 import Controller from "@ember/controller";
 import { withPluginApi } from 'discourse/lib/plugin-api';
 
+const contexts = [
+  'discovery',
+  'topic',
+  'user',
+  'tags-index',
+  {
+    name: 'tag-show',
+    template: 'tags-show'
+  }
+]
+
 function addSidebarProps(props) {
   if ($.isEmptyObject(props)) return;
   
   const container = Discourse.__container__;
   const appEvents = container.lookup("service:app-events");
   
-  [
-    'controller:discovery',
-    'controller:topic',
-    'controller:user',
-    'controller:tags',
-    'controller:tag'
-  ].forEach(controllerName => {
-    const controller = container.lookup(controllerName);
+  contexts.forEach(context => {
+    const controller = container.lookup(`controller:${context}`);
+    
     if (controller) {
       controller.set(
         'customSidebarProps',
@@ -67,7 +73,7 @@ function normalizeContext(input, opts={}) {
     discovery: ['topics', 'discovery', 'topic list', 'Topics', "Discovery", "Topic List"],
     topic: ["topic", "Topic"],
     user: ["user", 'profile', "User", 'Profile'],
-    tag: ["tag", "tags", "Tag", "Tags"]
+    tag: ["tag", "tags", "Tag", "Tags", "tags-index", "tag-show"]
   };
   
   let context = Object.keys(map).find((c) => map[c].includes(input));
@@ -84,31 +90,55 @@ function normalizeContext(input, opts={}) {
   return context;
 };
 
-function setupContext(context, app) {
-  if (!app[`${context}Route`]) {
-    app[`${context}Route`] = DiscourseRoute.extend();
-  }
-  if (!app[`${context}Controller`]) {
-    app[`${context}Controller`] = Controller.extend();
+function setupContexts(app) {
+  contexts.forEach(context => {
+    setupContext(context, app);
+  })
+}
+
+function contextAttr(context, attr) {
+  let result;
+  
+  if (typeof context === 'object') {
+    if (context[attr]) {
+      result = context[attr];
+    } else {
+      result = context['name'];
+    }
+  } else {
+    result = context;
   }
   
-  context = context.toLowerCase();
+  if (attr === 'template') {
+    result = result.replace(/-/g, '.');
+  }
+  
+  return result;
+}
+
+function setupContext(context, app) {
+  const name = contextAttr(context, 'name');
+  const route = contextAttr(context, 'route');
+  const controller = contextAttr(context, 'controller');
+  const template = contextAttr(context, 'template');
+  const model = contextAttr(context, 'model');
+  
   
   withPluginApi('0.8.32', api => {
-    api.modifyClass(`route:${context}`, {
+    api.modifyClass(`route:${route}`, {
       renderTemplate() {
         this.render('sidebar-wrapper');
-        this.render(context, {
+        this.render(template, {
           into: 'sidebar-wrapper',
           outlet: 'main-content',
-          controller: context,
-          model: this.modelFor(context)
+          controller,
+          model: this.modelFor(model)
         });
       }
     });
     
-    api.modifyClass(`controller:${context}`, Sidebars);
-    api.modifyClass(`controller:${context}`, { context });
+    api.modifyClass(`controller:${controller}`, Sidebars);
+    api.modifyClass(`controller:${controller}`, { context: name });
   });
 }
 
@@ -118,5 +148,5 @@ export {
   lookupLayoutsWidget,
   listLayoutsWidgets,
   normalizeContext,
-  setupContext
+  setupContexts
 }
